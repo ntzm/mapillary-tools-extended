@@ -1,34 +1,47 @@
 use indicatif::ParallelProgressIterator;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
+use serde::Deserialize;
 use std::path::PathBuf;
-use std::{env, fs, process};
-use geoutils::{Location, Distance};
+use std::{fs, process};
 
+// todo:
+// - Dry run?
+// - What to do with privacy files?
+
+#[derive(Debug, Deserialize)]
 struct Options {
-    privacy_zones: Vec<PrivacyZone>
+    privacy_zones: Vec<PrivacyZone>,
+    directory: String,
 }
 
+#[derive(Debug, Deserialize)]
 struct PrivacyZone {
-    name: &'static str,
+    name: String,
     centre: Location,
-    distance: Distance,
+    distance: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Location {
+    latitude: f64,
+    longitude: f64,
+}
+
+impl From<rexiv2::GpsInfo> for Location {
+    fn from(g: rexiv2::GpsInfo) -> Self {
+        Location { latitude: g.latitude, longitude: g.longitude }
+    }
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let dir = match args.get(1) {
-        Some(dir) => dir,
-        None => {
-            eprintln!("Directory is required");
-            process::exit(1);
-        }
-    };
+    let options: Options =
+        serde_yaml::from_str(&fs::read_to_string("config.yml").unwrap()).unwrap();
 
-    let paths: Vec<PathBuf> = match fs::read_dir(dir) {
+    let paths: Vec<PathBuf> = match fs::read_dir(&options.directory) {
         Ok(paths) => paths.map(|f| f.unwrap().path()).collect(),
         Err(_) => {
-            eprintln!("Could not open directory {}", dir);
+            eprintln!("Could not open directory {}", &options.directory);
             process::exit(1);
         }
     };
@@ -39,12 +52,6 @@ fn main() {
     progress.set_style(ProgressStyle::default_bar().template(
         "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} (ETA: {eta})",
     ));
-
-    let options = Options {
-        privacy_zones: vec![
-
-        ],
-    };
 
     let errors: Vec<String> = paths
         .par_iter()
@@ -84,14 +91,23 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), String> {
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
         .map_err(|_| format!("{}: Failed to save DateTimeOriginal value", path_str))?;
 
-    if ! options.privacy_zones.is_empty() {
-        let image_gps_info = meta.get_gps_info()
-            .ok_or_else(|| format!("{}: Image is missing GPSLatitude and/or GPSLongitude", path_str))?;
-        let image_location = Location::new(image_gps_info.latitude, image_gps_info.longitude);
+    if !options.privacy_zones.is_empty() {
+        let image_gps_info = meta.get_gps_info().ok_or_else(|| {
+            format!(
+                "{}: Image is missing GPSLatitude and/or GPSLongitude",
+                path_str
+            )
+        })?;
+
+        let image_location = image_gps_info.into();
 
         for privacy_zone in &options.privacy_zones {
-            if image_location.haversine_distance_to(&privacy_zone.centre).meters() <= privacy_zone.distance.meters() {
-                return Err(format!("{}: Image is inside privacy zone {}", path_str, privacy_zone.name));
+            let distance = haversine_distance(&image_location, &privacy_zone.centre);
+            if distance <= privacy_zone.distance {
+                return Err(format!(
+                    "{}: Image is inside privacy zone \"{}\"",
+                    path_str, privacy_zone.name
+                ));
             }
         }
     }
@@ -100,4 +116,19 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), String> {
         .map_err(|_| format!("{}: Failed to save file", path_str))?;
 
     Ok(())
+}
+
+fn haversine_distance(start: &Location, end: &Location) -> f64 {
+    let haversine_fn = |theta: f64| (1.0 - theta.cos()) / 2.0;
+
+    let phi1 = start.latitude.to_radians();
+    let phi2 = end.latitude.to_radians();
+    let lambda1 = start.longitude.to_radians();
+    let lambda2 = end.longitude.to_radians();
+
+    let hav_delta_phi = haversine_fn(phi2 - phi1);
+    let hav_delta_lambda = phi1.cos() * phi2.cos() * haversine_fn(lambda2 - lambda1);
+    let total_delta = hav_delta_phi + hav_delta_lambda;
+
+    (2.0 * 6371e3 * total_delta.sqrt().asin() * 1000.0).round() / 1000.0
 }
