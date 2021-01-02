@@ -45,26 +45,18 @@ fn main() {
 }
 
 fn process_file(path: &PathBuf) -> Result<(), String> {
+    let path_str = path.to_str().unwrap();
+
     let meta = rexiv2::Metadata::new_from_path(&path)
-        .map_err(|_e| format!("{}: Could not read metadata", path.to_str().unwrap()))?;
+        .map_err(|_| format!("{}: Could not read metadata", path_str))?;
 
     let date = meta
         .get_tag_string("Exif.GPSInfo.GPSDateStamp")
-        .map_err(|_e| {
-            format!(
-                "{}: Image is missing GPSDateStamp value",
-                path.to_str().unwrap()
-            )
-        })?;
+        .map_err(|_| format!("{}: Image is missing GPSDateStamp value", path_str))?;
 
     let time = meta
         .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
-        .map_err(|_e| {
-            format!(
-                "{}: Image is missing GPSTimeStamp value",
-                path.to_str().unwrap()
-            )
-        })?;
+        .map_err(|_| format!("{}: Image is missing GPSTimeStamp value", path_str))?;
 
     // Source for capacity: YY:MM:DD HH:MM:SS
     let mut date_time = String::with_capacity(19);
@@ -73,15 +65,10 @@ fn process_file(path: &PathBuf) -> Result<(), String> {
     date_time.push_str(&time);
 
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
-        .map_err(|_e| {
-            format!(
-                "{}: Failed to save DateTimeOriginal value",
-                path.to_str().unwrap()
-            )
-        })?;
+        .map_err(|_| format!("{}: Failed to save DateTimeOriginal value", path_str))?;
 
     meta.save_to_file(&path)
-        .map_err(|_e| format!("{}: Failed to save file", path.to_str().unwrap()))?;
+        .map_err(|_| format!("{}: Failed to save file", path_str))?;
 
     Ok(())
 }
