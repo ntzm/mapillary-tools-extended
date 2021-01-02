@@ -18,7 +18,7 @@ fn main() {
         Ok(paths) => paths.map(|f| f.unwrap().path()).collect(),
         Err(_) => {
             eprintln!("Could not open directory {}", dir);
-            process::exit(2);
+            process::exit(1);
         }
     };
 
