@@ -1,14 +1,26 @@
 use indicatif::ParallelProgressIterator;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use std::fs;
 use std::path::PathBuf;
+use std::{env, fs, process};
 
 fn main() {
-    let paths: Vec<PathBuf> = fs::read_dir("data")
-        .unwrap()
-        .map(|f| f.unwrap().path())
-        .collect();
+    let args: Vec<String> = env::args().collect();
+    let dir = match args.get(1) {
+        Some(dir) => dir,
+        None => {
+            eprintln!("Directory is required");
+            process::exit(1);
+        }
+    };
+
+    let paths: Vec<PathBuf> = match fs::read_dir(dir) {
+        Ok(paths) => paths.map(|f| f.unwrap().path()).collect(),
+        Err(_) => {
+            eprintln!("Could not open directory {}", dir);
+            process::exit(2);
+        }
+    };
 
     rexiv2::set_log_level(rexiv2::LogLevel::ERROR);
 
@@ -25,7 +37,7 @@ fn main() {
         .collect();
 
     for error in &errors {
-        println!("Failed to process {}", error.to_string());
+        eprintln!("Failed to process {}", error.to_string());
     }
 
     println!("Processed {} files", paths.len() - errors.len());
