@@ -92,6 +92,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a357d28ed41a50f9c765dbfe56cbc04a64e53e5fc58ba79fbc34c10ef3df831f"
 
 [[package]]
+name = "geoutils"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4635c5c079227d2e54fe0f69b3f1ac9376a517608762267975ee1603fa0800bf"
+
+[[package]]
 name = "gexiv2-sys"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -139,6 +145,7 @@ checksum = "1482821306169ec4d07f6aca392a4681f66c75c9918aa49641a2595db64053cb"
 name = "mapillary-tools-extended"
 version = "0.1.0"
 dependencies = [
+ "geoutils",
  "indicatif",
  "rayon",
  "rexiv2",

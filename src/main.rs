@@ -3,6 +3,17 @@ use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use std::path::PathBuf;
 use std::{env, fs, process};
+use geoutils::{Location, Distance};
+
+struct Options {
+    privacy_zones: Vec<PrivacyZone>
+}
+
+struct PrivacyZone {
+    name: &'static str,
+    centre: Location,
+    distance: Distance,
+}
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -29,10 +40,16 @@ fn main() {
         "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} (ETA: {eta})",
     ));
 
+    let options = Options {
+        privacy_zones: vec![
+
+        ],
+    };
+
     let errors: Vec<String> = paths
         .par_iter()
         .progress_with(progress)
-        .map(|p| process_file(&p))
+        .map(|p| process_file(&p, &options))
         .filter_map(|r| r.err())
         .collect();
 
@@ -44,7 +61,7 @@ fn main() {
     println!("Failed to process {} files", errors.len());
 }
 
-fn process_file(path: &PathBuf) -> Result<(), String> {
+fn process_file(path: &PathBuf, options: &Options) -> Result<(), String> {
     let path_str = path.to_str().unwrap();
 
     let meta = rexiv2::Metadata::new_from_path(&path)
@@ -66,6 +83,18 @@ fn process_file(path: &PathBuf) -> Result<(), String> {
 
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
         .map_err(|_| format!("{}: Failed to save DateTimeOriginal value", path_str))?;
+
+    if ! options.privacy_zones.is_empty() {
+        let image_gps_info = meta.get_gps_info()
+            .ok_or_else(|| format!("{}: Image is missing GPSLatitude and/or GPSLongitude", path_str))?;
+        let image_location = Location::new(image_gps_info.latitude, image_gps_info.longitude);
+
+        for privacy_zone in &options.privacy_zones {
+            if image_location.haversine_distance_to(&privacy_zone.centre).meters() <= privacy_zone.distance.meters() {
+                return Err(format!("{}: Image is inside privacy zone {}", path_str, privacy_zone.name));
+            }
+        }
+    }
 
     meta.save_to_file(&path)
         .map_err(|_| format!("{}: Failed to save file", path_str))?;
