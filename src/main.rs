@@ -31,7 +31,8 @@ fn main() {
             date_time.push_str(" ");
             date_time.push_str(&time);
             meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)?;
-            meta.save_to_file(&path)
+            meta.save_to_file(&path)?;
+            Ok(())
         })
         .filter_map(|r| r.err())
         .collect();
