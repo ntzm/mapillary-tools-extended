@@ -1,7 +1,6 @@
 use indicatif::ParallelProgressIterator;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
-use rexiv2;
 use std::fs;
 use std::path::PathBuf;
 
@@ -29,8 +28,8 @@ fn main() {
         println!("Failed to process {}", error.to_string());
     }
 
-    println!("Processed {} files", &paths.len() - &errors.len());
-    println!("Failed to process {} files", &errors.len());
+    println!("Processed {} files", paths.len() - errors.len());
+    println!("Failed to process {} files", errors.len());
 }
 
 fn process_file(path: &PathBuf) -> Result<(), String> {
@@ -58,7 +57,7 @@ fn process_file(path: &PathBuf) -> Result<(), String> {
     // Source for capacity: YY:MM:DD HH:MM:SS
     let mut date_time = String::with_capacity(19);
     date_time.push_str(&date);
-    date_time.push_str(" ");
+    date_time.push(' ');
     date_time.push_str(&time);
 
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
