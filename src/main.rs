@@ -31,13 +31,27 @@ struct Location {
 }
 
 custom_error! {ProcessError
-    ExifFromPath{path: String} = "{path}: Could not read metadata",
-    MissingDateStamp{path: String} = "{path}: Image is missing GPSDateStamp value",
-    MissingTimeStamp{path: String} = "{path}: Image is missing GPSTimeStamp value",
-    SaveDateTime{path: String} = "{path}: Failed to save DateTimeOriginal value",
-    SaveFile{path: String} = "{path}: Failed to save file",
-    Privacy{zone: String, path: String} = "{path}: Image is inside privacy zone {zone}",
-    MissingCoordinates{path: String} = "{path}: Image is missing GPSLatitude and/or GPSLongitude",
+    ExifFromPath{path: String}          = "Could not read metadata",
+    MissingDateStamp{path: String}      = "Image is missing GPSDateStamp value",
+    MissingTimeStamp{path: String}      = "Image is missing GPSTimeStamp value",
+    SaveDateTime{path: String}          = "Failed to save DateTimeOriginal value",
+    SaveFile{path: String}              = "Failed to save file",
+    Privacy{zone: String, path: String} = "Image is inside privacy zone {zone}",
+    MissingCoordinates{path: String}    = "Image is missing GPSLatitude and/or GPSLongitude",
+}
+
+impl ProcessError {
+    fn path(&self) -> String {
+        match &self {
+            ProcessError::ExifFromPath { path }
+            | ProcessError::MissingDateStamp { path }
+            | ProcessError::MissingTimeStamp { path }
+            | ProcessError::SaveDateTime { path }
+            | ProcessError::SaveFile { path }
+            | ProcessError::Privacy { path, zone: _ }
+            | ProcessError::MissingCoordinates { path } => path.to_string(),
+        }
+    }
 }
 
 impl From<rexiv2::GpsInfo> for Location {
@@ -76,7 +90,7 @@ fn main() {
         .collect();
 
     for error in &errors {
-        eprintln!("Failed to process {}", error.to_string());
+        eprintln!("Failed to process {}: {}", error.path(), error.to_string(),);
     }
 
     println!("Processed {} files", paths.len() - errors.len());
