@@ -4,6 +4,8 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::{fs, process};
+extern crate custom_error;
+use custom_error::custom_error;
 
 // todo:
 // - Dry run?
@@ -28,9 +30,22 @@ struct Location {
     longitude: f64,
 }
 
+custom_error! {ProcessError
+    ExifFromPath{path: String} = "{path}: Could not read metadata",
+    MissingDateStamp{path: String} = "{path}: Image is missing GPSDateStamp value",
+    MissingTimeStamp{path: String} = "{path}: Image is missing GPSTimeStamp value",
+    SaveDateTime{path: String} = "{path}: Failed to save DateTimeOriginal value",
+    SaveFile{path: String} = "{path}: Failed to save file",
+    Privacy{zone: String, path: String} = "{path}: Image is inside privacy zone {zone}",
+    MissingCoordinates{path: String} = "{path}: Image is missing GPSLatitude and/or GPSLongitude",
+}
+
 impl From<rexiv2::GpsInfo> for Location {
     fn from(g: rexiv2::GpsInfo) -> Self {
-        Location { latitude: g.latitude, longitude: g.longitude }
+        Location {
+            latitude: g.latitude,
+            longitude: g.longitude,
+        }
     }
 }
 
@@ -53,7 +68,7 @@ fn main() {
         "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} (ETA: {eta})",
     ));
 
-    let errors: Vec<String> = paths
+    let errors: Vec<ProcessError> = paths
         .par_iter()
         .progress_with(progress)
         .map(|p| process_file(&p, &options))
@@ -68,19 +83,24 @@ fn main() {
     println!("Failed to process {} files", errors.len());
 }
 
-fn process_file(path: &PathBuf, options: &Options) -> Result<(), String> {
+fn process_file(path: &PathBuf, options: &Options) -> Result<(), ProcessError> {
     let path_str = path.to_str().unwrap();
 
-    let meta = rexiv2::Metadata::new_from_path(&path)
-        .map_err(|_| format!("{}: Could not read metadata", path_str))?;
+    let meta = rexiv2::Metadata::new_from_path(&path).map_err(|_| ProcessError::ExifFromPath {
+        path: path_str.to_string(),
+    })?;
 
     let date = meta
         .get_tag_string("Exif.GPSInfo.GPSDateStamp")
-        .map_err(|_| format!("{}: Image is missing GPSDateStamp value", path_str))?;
+        .map_err(|_| ProcessError::MissingDateStamp {
+            path: path_str.to_string(),
+        })?;
 
     let time = meta
         .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
-        .map_err(|_| format!("{}: Image is missing GPSTimeStamp value", path_str))?;
+        .map_err(|_| ProcessError::MissingTimeStamp {
+            path: path_str.to_string(),
+        })?;
 
     // Source for capacity: YY:MM:DD HH:MM:SS
     let mut date_time = String::with_capacity(19);
@@ -89,31 +109,34 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), String> {
     date_time.push_str(&time);
 
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
-        .map_err(|_| format!("{}: Failed to save DateTimeOriginal value", path_str))?;
+        .map_err(|_| ProcessError::SaveDateTime {
+            path: path_str.to_string(),
+        })?;
 
     if !options.privacy_zones.is_empty() {
-        let image_gps_info = meta.get_gps_info().ok_or_else(|| {
-            format!(
-                "{}: Image is missing GPSLatitude and/or GPSLongitude",
-                path_str
-            )
-        })?;
+        let image_gps_info =
+            meta.get_gps_info()
+                .ok_or_else(|| ProcessError::MissingCoordinates {
+                    path: path_str.to_string(),
+                })?;
 
         let image_location = image_gps_info.into();
 
         for privacy_zone in &options.privacy_zones {
             let distance = haversine_distance(&image_location, &privacy_zone.centre);
             if distance <= privacy_zone.distance {
-                return Err(format!(
-                    "{}: Image is inside privacy zone \"{}\"",
-                    path_str, privacy_zone.name
-                ));
+                return Err(ProcessError::Privacy {
+                    path: path_str.to_string(),
+                    zone: privacy_zone.name.to_string(),
+                });
             }
         }
     }
 
     meta.save_to_file(&path)
-        .map_err(|_| format!("{}: Failed to save file", path_str))?;
+        .map_err(|_| ProcessError::SaveFile {
+            path: path_str.to_string(),
+        })?;
 
     Ok(())
 }
