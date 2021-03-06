@@ -2,17 +2,18 @@ use indicatif::ParallelProgressIterator;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use serde::Deserialize;
+use std::fs::{create_dir_all, rename};
 use std::path::{Path, PathBuf};
 use std::{fs, process};
 
 // todo:
 // - Dry run?
-// - What to do with privacy files?
 
 #[derive(Debug, Deserialize)]
 struct Options {
     privacy_zones: Vec<PrivacyZone>,
-    directory: String,
+    input_directory: String,
+    failed_directory: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,10 +97,12 @@ fn main() {
     let options: Options =
         serde_yaml::from_str(&fs::read_to_string("config.yml").unwrap()).unwrap();
 
-    let paths: Vec<PathBuf> = match fs::read_dir(&options.directory) {
+    create_dir_all(&options.failed_directory).unwrap();
+
+    let paths: Vec<PathBuf> = match fs::read_dir(&options.input_directory) {
         Ok(paths) => paths.map(|f| f.unwrap().path()).collect(),
         Err(_) => {
-            eprintln!("Could not open directory {}", &options.directory);
+            eprintln!("Could not open directory {}", &options.input_directory);
             process::exit(1);
         }
     };
@@ -119,11 +122,21 @@ fn main() {
         .collect();
 
     for error in &errors {
+        let new_file_name = error.path().file_name().unwrap().to_str().unwrap();
+        let mut new_path =
+            String::with_capacity(&options.failed_directory.len() + new_file_name.len() + 1);
+        new_path.push_str(&options.failed_directory);
+        new_path.push('/');
+        new_path.push_str(new_file_name);
+
         eprintln!(
-            "Failed to process {}: {}",
+            "Failed to process {}: {} -> {}",
             error.path().to_str().unwrap(),
             error.to_string(),
+            new_path,
         );
+
+        rename(error.path(), new_path).unwrap();
     }
 
     println!("Processed {} files", paths.len() - errors.len());
