@@ -151,54 +151,73 @@ fn main() {
     println!("Failed to process {} files", errors.len());
 }
 
+fn check_privacy_zones<'a>(
+    path: &'a PathBuf,
+    meta: &rexiv2::Metadata,
+    options: &Options,
+) -> Result<(), ProcessError<'a>> {
+    let image_gps_info = meta
+        .get_gps_info()
+        .ok_or_else(|| ProcessError::MissingCoordinates {
+            path: path.as_path(),
+        })?;
+
+    let image_location = image_gps_info.into();
+
+    for privacy_zone in &options.privacy_zones {
+        let distance = haversine_distance(&image_location, &privacy_zone.centre);
+        if distance <= privacy_zone.distance {
+            return Err(ProcessError::Privacy {
+                path: path.as_path(),
+                zone: privacy_zone.name.to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn use_gps_timestamps<'a>(
+    path: &'a PathBuf,
+    meta: &rexiv2::Metadata,
+) -> Result<(), ProcessError<'a>> {
+    let date = meta
+        .get_tag_string("Exif.GPSInfo.GPSDateStamp")
+        .map_err(|_| ProcessError::MissingDateStamp {
+            path: path.as_path(),
+        })?;
+
+    let time = meta
+        .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
+        .map_err(|_| ProcessError::MissingTimeStamp {
+            path: path.as_path(),
+        })?;
+
+    // Source for capacity: YY:MM:DD HH:MM:SS
+    let mut date_time = String::with_capacity(19);
+    date_time.push_str(&date);
+    date_time.push(' ');
+    date_time.push_str(&time);
+
+    meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
+        .map_err(|_| ProcessError::SaveDateTime {
+            path: path.as_path(),
+        })?;
+
+    Ok(())
+}
+
 fn process_file<'a>(path: &'a PathBuf, options: &Options) -> Result<(), ProcessError<'a>> {
     let meta = rexiv2::Metadata::new_from_path(&path).map_err(|_| ProcessError::ExifFromPath {
         path: path.as_path(),
     })?;
 
-    if options.use_gps_timestamps {
-        let date = meta
-            .get_tag_string("Exif.GPSInfo.GPSDateStamp")
-            .map_err(|_| ProcessError::MissingDateStamp {
-                path: path.as_path(),
-            })?;
-
-        let time = meta
-            .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
-            .map_err(|_| ProcessError::MissingTimeStamp {
-                path: path.as_path(),
-            })?;
-
-        // Source for capacity: YY:MM:DD HH:MM:SS
-        let mut date_time = String::with_capacity(19);
-        date_time.push_str(&date);
-        date_time.push(' ');
-        date_time.push_str(&time);
-
-        meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
-            .map_err(|_| ProcessError::SaveDateTime {
-                path: path.as_path(),
-            })?;
+    if !options.privacy_zones.is_empty() {
+        check_privacy_zones(&path, &meta, &options)?;
     }
 
-    if !options.privacy_zones.is_empty() {
-        let image_gps_info =
-            meta.get_gps_info()
-                .ok_or_else(|| ProcessError::MissingCoordinates {
-                    path: path.as_path(),
-                })?;
-
-        let image_location = image_gps_info.into();
-
-        for privacy_zone in &options.privacy_zones {
-            let distance = haversine_distance(&image_location, &privacy_zone.centre);
-            if distance <= privacy_zone.distance {
-                return Err(ProcessError::Privacy {
-                    path: path.as_path(),
-                    zone: privacy_zone.name.to_string(),
-                });
-            }
-        }
+    if options.use_gps_timestamps {
+        use_gps_timestamps(&path, &meta)?;
     }
 
     meta.save_to_file(&path)
