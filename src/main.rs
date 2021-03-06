@@ -2,7 +2,7 @@ use indicatif::ParallelProgressIterator;
 use indicatif::{ProgressBar, ProgressStyle};
 use rayon::prelude::*;
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::{fs, process};
 
 // todo:
@@ -29,19 +29,19 @@ struct Location {
 }
 
 #[derive(Debug)]
-enum ProcessError {
-    ExifFromPath { path: String },
-    MissingDateStamp { path: String },
-    MissingTimeStamp { path: String },
-    SaveDateTime { path: String },
-    SaveFile { path: String },
-    Privacy { zone: String, path: String },
-    MissingCoordinates { path: String },
+enum ProcessError<'a> {
+    ExifFromPath { path: &'a Path },
+    MissingDateStamp { path: &'a Path },
+    MissingTimeStamp { path: &'a Path },
+    SaveDateTime { path: &'a Path },
+    SaveFile { path: &'a Path },
+    Privacy { zone: String, path: &'a Path },
+    MissingCoordinates { path: &'a Path },
 }
 
-impl std::error::Error for ProcessError {}
+impl std::error::Error for ProcessError<'_> {}
 
-impl std::fmt::Display for ProcessError {
+impl std::fmt::Display for ProcessError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ProcessError::ExifFromPath { path: _ } => {
@@ -69,8 +69,8 @@ impl std::fmt::Display for ProcessError {
     }
 }
 
-impl ProcessError {
-    fn path(&self) -> String {
+impl ProcessError<'_> {
+    fn path(&self) -> &Path {
         match &self {
             ProcessError::ExifFromPath { path }
             | ProcessError::MissingDateStamp { path }
@@ -78,7 +78,7 @@ impl ProcessError {
             | ProcessError::SaveDateTime { path }
             | ProcessError::SaveFile { path }
             | ProcessError::Privacy { path, zone: _ }
-            | ProcessError::MissingCoordinates { path } => path.to_string(),
+            | ProcessError::MissingCoordinates { path } => path,
         }
     }
 }
@@ -119,30 +119,32 @@ fn main() {
         .collect();
 
     for error in &errors {
-        eprintln!("Failed to process {}: {}", error.path(), error.to_string(),);
+        eprintln!(
+            "Failed to process {}: {}",
+            error.path().to_str().unwrap(),
+            error.to_string(),
+        );
     }
 
     println!("Processed {} files", paths.len() - errors.len());
     println!("Failed to process {} files", errors.len());
 }
 
-fn process_file(path: &PathBuf, options: &Options) -> Result<(), ProcessError> {
-    let path_str = path.to_str().unwrap();
-
+fn process_file<'a>(path: &'a PathBuf, options: &Options) -> Result<(), ProcessError<'a>> {
     let meta = rexiv2::Metadata::new_from_path(&path).map_err(|_| ProcessError::ExifFromPath {
-        path: path_str.to_string(),
+        path: path.as_path(),
     })?;
 
     let date = meta
         .get_tag_string("Exif.GPSInfo.GPSDateStamp")
         .map_err(|_| ProcessError::MissingDateStamp {
-            path: path_str.to_string(),
+            path: path.as_path(),
         })?;
 
     let time = meta
         .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
         .map_err(|_| ProcessError::MissingTimeStamp {
-            path: path_str.to_string(),
+            path: path.as_path(),
         })?;
 
     // Source for capacity: YY:MM:DD HH:MM:SS
@@ -153,14 +155,14 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), ProcessError> {
 
     meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
         .map_err(|_| ProcessError::SaveDateTime {
-            path: path_str.to_string(),
+            path: path.as_path(),
         })?;
 
     if !options.privacy_zones.is_empty() {
         let image_gps_info =
             meta.get_gps_info()
                 .ok_or_else(|| ProcessError::MissingCoordinates {
-                    path: path_str.to_string(),
+                    path: path.as_path(),
                 })?;
 
         let image_location = image_gps_info.into();
@@ -169,7 +171,7 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), ProcessError> {
             let distance = haversine_distance(&image_location, &privacy_zone.centre);
             if distance <= privacy_zone.distance {
                 return Err(ProcessError::Privacy {
-                    path: path_str.to_string(),
+                    path: path.as_path(),
                     zone: privacy_zone.name.to_string(),
                 });
             }
@@ -178,7 +180,7 @@ fn process_file(path: &PathBuf, options: &Options) -> Result<(), ProcessError> {
 
     meta.save_to_file(&path)
         .map_err(|_| ProcessError::SaveFile {
-            path: path_str.to_string(),
+            path: path.as_path(),
         })?;
 
     Ok(())
