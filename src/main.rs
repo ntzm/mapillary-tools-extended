@@ -132,7 +132,7 @@ fn main() {
     for error in &errors {
         let new_file_name = error.path().file_name().unwrap().to_str().unwrap();
         let mut new_path =
-            String::with_capacity(&options.failed_directory.len() + new_file_name.len() + 1);
+            String::with_capacity(options.failed_directory.len() + new_file_name.len() + 1);
         new_path.push_str(&options.failed_directory);
         new_path.push('/');
         new_path.push_str(new_file_name);
