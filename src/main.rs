@@ -4,8 +4,6 @@ use rayon::prelude::*;
 use serde::Deserialize;
 use std::path::PathBuf;
 use std::{fs, process};
-extern crate custom_error;
-use custom_error::custom_error;
 
 // todo:
 // - Dry run?
@@ -30,14 +28,45 @@ struct Location {
     longitude: f64,
 }
 
-custom_error! {ProcessError
-    ExifFromPath{path: String}          = "Could not read metadata",
-    MissingDateStamp{path: String}      = "Image is missing GPSDateStamp value",
-    MissingTimeStamp{path: String}      = "Image is missing GPSTimeStamp value",
-    SaveDateTime{path: String}          = "Failed to save DateTimeOriginal value",
-    SaveFile{path: String}              = "Failed to save file",
-    Privacy{zone: String, path: String} = "Image is inside privacy zone {zone}",
-    MissingCoordinates{path: String}    = "Image is missing GPSLatitude and/or GPSLongitude",
+#[derive(Debug)]
+enum ProcessError {
+    ExifFromPath { path: String },
+    MissingDateStamp { path: String },
+    MissingTimeStamp { path: String },
+    SaveDateTime { path: String },
+    SaveFile { path: String },
+    Privacy { zone: String, path: String },
+    MissingCoordinates { path: String },
+}
+
+impl std::error::Error for ProcessError {}
+
+impl std::fmt::Display for ProcessError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ProcessError::ExifFromPath { path: _ } => {
+                write!(f, "Could not read metadata")
+            }
+            ProcessError::MissingDateStamp { path: _ } => {
+                write!(f, "Image is missing GPSDateStamp value")
+            }
+            ProcessError::MissingTimeStamp { path: _ } => {
+                write!(f, "Image is missing GPSTimeStamp value")
+            }
+            ProcessError::SaveDateTime { path: _ } => {
+                write!(f, "Failed to save DateTimeOriginal value")
+            }
+            ProcessError::SaveFile { path: _ } => {
+                write!(f, "Failed to save file")
+            }
+            ProcessError::Privacy { path: _, zone } => {
+                write!(f, "Image is inside privacy zone {}", zone)
+            }
+            ProcessError::MissingCoordinates { path: _ } => {
+                write!(f, "Image is missing GPSLatitude and/or GPSLongitude")
+            }
+        }
+    }
 }
 
 impl ProcessError {
