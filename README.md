@@ -11,6 +11,8 @@ Create a file called `config.yml` with the following structure:
 input_directory: data
 # The directory to put images in that could not be processed
 failed_directory: failed
+# Do you want to use the GPS date + time instead of the image's date + time
+use_gps_timestamps: true
 # Areas that you want to exclude from Mapillary. Any image in this zone will be moved to the failed_directory
 privacy_zones:
   - name: Home

@@ -11,7 +11,10 @@ use std::{fs, process};
 
 #[derive(Debug, Deserialize)]
 struct Options {
+    #[serde(default)]
     privacy_zones: Vec<PrivacyZone>,
+    #[serde(default)]
+    use_gps_timestamps: bool,
     input_directory: String,
     failed_directory: String,
 }
@@ -97,6 +100,11 @@ fn main() {
     let options: Options =
         serde_yaml::from_str(&fs::read_to_string("config.yml").unwrap()).unwrap();
 
+    if !options.use_gps_timestamps && options.privacy_zones.is_empty() {
+        eprintln!("Nothing to do!");
+        process::exit(1);
+    }
+
     create_dir_all(&options.failed_directory).unwrap();
 
     let paths: Vec<PathBuf> = match fs::read_dir(&options.input_directory) {
@@ -148,28 +156,30 @@ fn process_file<'a>(path: &'a PathBuf, options: &Options) -> Result<(), ProcessE
         path: path.as_path(),
     })?;
 
-    let date = meta
-        .get_tag_string("Exif.GPSInfo.GPSDateStamp")
-        .map_err(|_| ProcessError::MissingDateStamp {
-            path: path.as_path(),
-        })?;
+    if options.use_gps_timestamps {
+        let date = meta
+            .get_tag_string("Exif.GPSInfo.GPSDateStamp")
+            .map_err(|_| ProcessError::MissingDateStamp {
+                path: path.as_path(),
+            })?;
 
-    let time = meta
-        .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
-        .map_err(|_| ProcessError::MissingTimeStamp {
-            path: path.as_path(),
-        })?;
+        let time = meta
+            .get_tag_interpreted_string("Exif.GPSInfo.GPSTimeStamp")
+            .map_err(|_| ProcessError::MissingTimeStamp {
+                path: path.as_path(),
+            })?;
 
-    // Source for capacity: YY:MM:DD HH:MM:SS
-    let mut date_time = String::with_capacity(19);
-    date_time.push_str(&date);
-    date_time.push(' ');
-    date_time.push_str(&time);
+        // Source for capacity: YY:MM:DD HH:MM:SS
+        let mut date_time = String::with_capacity(19);
+        date_time.push_str(&date);
+        date_time.push(' ');
+        date_time.push_str(&time);
 
-    meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
-        .map_err(|_| ProcessError::SaveDateTime {
-            path: path.as_path(),
-        })?;
+        meta.set_tag_string("Exif.Photo.DateTimeOriginal", &date_time)
+            .map_err(|_| ProcessError::SaveDateTime {
+                path: path.as_path(),
+            })?;
+    }
 
     if !options.privacy_zones.is_empty() {
         let image_gps_info =
