@@ -13,7 +13,8 @@ input_directory: data
 failed_directory: failed
 # Do you want to use the GPS date + time instead of the image's date + time
 use_gps_timestamps: true
-# Areas that you want to exclude from Mapillary. Any image in this zone will be moved to the failed_directory
+# Areas that you want to exclude from Mapillary. Any image in this zone will be moved to the
+# failed_directory
 privacy_zones:
   - name: Home
     centre:
